@@ -1,93 +1,174 @@
-<!DOCTYPE html>
-<html lang="en">
+<html>
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Project 2</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-    
-    .gridlines .domain {
-      display: none;
-    }
-    
-    .gridlines line {
-      stroke: #444;
-    }
-      
+        .tooltip {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #ccc;
+            padding: 10px;
+            display: none;
+            pointer-events: none;
+        }
+
+        .button-container {
+            margin-top: 10px;
+            text-align: center;
+        }
+
+        .filter-button {
+            padding: 5px 10px;
+            margin: 5px;
+            cursor: pointer;
+            background-color: #69b3a2;
+            border: none;
+            color: white;
+        }
+
+        .filter-button:hover {
+            background-color: #4a7c6e;
+        }
     </style>
 </head>
+
 <body>
-    <svg id="barchart" height="500" width="900"></svg>
+    <div id="map"></div>
+    <div class="button-container" id="button-container"></div>
+    <div class="tooltip" id="tooltip"></div>
+
     <script>
-        const svg = d3.select("svg#barchart");
-        const width = svg.attr("width");
-        const height = svg.attr("height");
-        const margin = {top: 10, right: 10, bottom: 50, left: 50};
-        const chartWidth = width - margin.left - margin.right;
-        const chartHeight = height - margin.top - margin.bottom;
-    
-        let annotations = svg.append("g").attr("id","annotations");
-        let chartArea = svg.append("g").attr("id","points")
-                        .attr("transform",`translate(${margin.left},${margin.top})`);
-        d3.csv('1900_2021_DISASTERS.xlsx - emdat data.csv', d3.autoType).then((data) => {
-            console.log("Data loaded:", data);
-            const chinaData = data.filter(d => d.Country === "Guatemala" && d['Disaster Subgroup'] !== 'Biological');
-            console.log("China Data:", chinaData);
-            const disasterCounts = d3.rollups(
-                chinaData,
-                v => v.length,
-                d => d["Disaster Type"]
-            );
+        const width = 960, height = 600;
+        const svg = d3.select("#map").append("svg")
+            .attr("width", width)
+            .attr("height", height);
 
-            const totalDisasters = d3.sum(disasterCounts, d => d[1]);
+        const projection = d3.geoMercator()
+            .scale(150)
+            .translate([width / 2, height / 1.5]);
 
-            const disasterData = disasterCounts.map(d => ({
-                disaster_type: d[0],
-                percentage: d[1] / totalDisasters
-            }));
+        const path = d3.geoPath().projection(projection);
+        const tooltip = d3.select("#tooltip");
 
-            const percentScale = d3.scaleLinear().domain([0,1]).range([chartHeight, 0]);
-            const disasterTypeScale = d3.scaleBand()
-                .domain(disasterData.map(d => d.disaster_type))
-                .range([0, chartWidth])
-                .padding(0.05);
+        // Function to standardize country names
+        function standardizeCountryName(name) {
+            const countryNameMap = {
+                "United States": "United States of America",
+                "Russia": "Russian Federation",
+                "South Korea": "Korea, Republic of",
+                "North Korea": "Korea, Democratic People's Republic of",
+                "Iran": "Iran (Islamic Republic of)",
+                "Vietnam": "Viet Nam",
+                "Syria": "Syrian Arab Republic",
+                // Add other mappings as needed
+            };
+            return countryNameMap[name] || name;
+        }
 
-            const leftAxis = d3.axisLeft(percentScale).tickFormat(d3.format(".0%"));
-            const bottomAxis = d3.axisBottom(disasterTypeScale);
+        Promise.all([
+            d3.csv("1970-2021_DISASTERS.csv"),
+            d3.csv("1900_2021_DISASTERS.csv"),
+            d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson")
+        ]).then(([data1, data2, geoData]) => {
+            const combinedData = data1.concat(data2);
 
-            // Add gridlines
-            const leftGridlines = d3.axisLeft(percentScale)
-                .tickSize(-chartWidth - 10)
-                .tickFormat("");
+            // Precompute country stats for initial display
+            const countryStats = d3.rollups(combinedData, v => {
+                const totalDeaths = d3.sum(v, d => +d["Total Deaths"] || 0);
+                const totalEconomicLoss = d3.sum(v, d => +d["Total Damages ('000 US$)"] || 0);
+                const numberOfDisasters = v.length;
+                const commonDisasterSubgroup = d3.mode(v.map(d => d["Disaster Subgroup"]));
 
-            annotations.append("g")
-                .attr("class", "y axis")
-                .attr("transform", `translate(${margin.left - 10},${margin.top})`)
-                .call(leftAxis);
+                return {
+                    averageDeaths: totalDeaths / numberOfDisasters,
+                    totalEconomicLoss: totalEconomicLoss,
+                    numberOfDisasters: numberOfDisasters,
+                    mostCommonDisasterSubgroup: commonDisasterSubgroup
+                };
+            }, d => standardizeCountryName(d.Country)); // Apply standardization
 
-            annotations.append("g")
-                .attr("class", "y gridlines")
-                .attr("transform", `translate(${margin.left - 10},${margin.top})`)
-                .call(leftGridlines);
+            const countryStatsMap = new Map(countryStats);
 
-            annotations.append("g")
-                .attr("class", "x axis")
-                .attr("transform", `translate(${margin.left},${chartHeight + margin.top + 10})`)
-                .call(bottomAxis);
+            
+            svg.selectAll("path")
+                .data(geoData.features)
+                .enter().append("path")
+                .attr("d", path)
+                .attr("fill", "#d3d3d3")  
+                .attr("stroke", "#fff")
+                .on("mouseover", function(event, d) {
+                    const countryName = d.properties.name;
+                    const stats = countryStatsMap.get(countryName);
+                    
+                    if (stats) {
+                        tooltip.style("display", "block")
+                               .html(`
+                                <strong>${countryName}</strong><br>
+                                Average Deaths: ${stats.averageDeaths.toFixed(2)}<br>
+                                Total Economic Loss: $${stats.totalEconomicLoss.toLocaleString()}<br>
+                                Number of Disasters: ${stats.numberOfDisasters}<br>
+                                Most Common Disaster Subgroup: ${stats.mostCommonDisasterSubgroup}
+                               `);
+                    } else {
+                        tooltip.style("display", "block")
+                               .html(`<strong>${countryName}</strong><br>No data available`);
+                    }
+                })
+                .on("mousemove", function(event) {
+                    tooltip.style("top", (event.pageY + 10) + "px")
+                           .style("left", (event.pageX + 10) + "px");
+                })
+                .on("mouseout", function() {
+                    tooltip.style("display", "none");
+                });
 
-            // Create bars for percentages
-            chartArea.selectAll("rect.bar")
-                .data(disasterData)
-                .join("rect")
-                .attr("class", "bar")
-                .attr("fill", "steelblue")
-                .attr("x", d => disasterTypeScale(d.disaster_type))
-                .attr("y", d => percentScale(d.percentage))
-                .attr("height", d => percentScale(0) - percentScale(d.percentage))
-                .attr("width", disasterTypeScale.bandwidth());
+            function updateMap(selectedDisasterType) {
+                // Filter data for the selected disaster type
+                const disasterData = combinedData.filter(d => d["Disaster Type"] === selectedDisasterType);
 
-        })
+                const disasterCounts = d3.rollups(disasterData, v => v.length, d => standardizeCountryName(d.Country));
+                const disasterCountsMap = new Map(disasterCounts);
+
+                const colorScale = d3.scaleSequential(d3.interpolateBlues)
+                    .domain([0, d3.max(disasterCounts, d => d[1])]);
+
+                // Update map colors and tooltips based on selected disaster type
+                svg.selectAll("path")
+                    .attr("fill", d => {
+                        const count = disasterCountsMap.get(d.properties.name) || 0;
+                        return count > 0 ? colorScale(count) : "#d3d3d3"; // Default color if no data for the country
+                    })
+                    .on("mouseover", function(event, d) {
+                        const countryName = d.properties.name;
+                        const count = disasterCountsMap.get(countryName) || 0;
+                        const stats = countryStatsMap.get(countryName);
+
+                        tooltip.style("display", "block")
+                               .html(`
+                                <strong>${countryName}</strong><br>
+                                Number of ${selectedDisasterType} Disasters: ${count}<br>
+                                Average Deaths: ${stats ? stats.averageDeaths.toFixed(2) : 'N/A'}<br>
+                                Total Economic Loss: $${stats ? stats.totalEconomicLoss.toLocaleString() : 'N/A'}<br>
+                                Most Common Disaster Subgroup: ${stats ? stats.mostCommonDisasterSubgroup : 'N/A'}
+                               `);
+                    });
+            }
+
+            function createButtons() {
+                const buttonContainer = d3.select("#button-container");
+
+                Array.from(new Set(combinedData.map(d => d["Disaster Type"]))).forEach(disasterType => {
+                    buttonContainer.append("button")
+                        .attr("class", "filter-button")
+                        .text(disasterType)
+                        .on("click", () => updateMap(disasterType));
+                });
+            }
+
+            createButtons();
+        }).catch(error => {
+            console.error("Error loading data:", error);
+        });
     </script>
 </body>
 </html>
