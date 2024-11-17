@@ -13,6 +13,20 @@
             display: none;
             pointer-events: none;
         }
+        body {
+            display: flex;
+            flex-direction: row;
+
+        }
+        #map {
+            width: 60%;
+            vertical-align: top;
+        }
+        #line-chart {
+            width: 35%;
+            padding-left: 5%;
+            vertical-align: top;
+        }   
     </style>
 
 </head>
@@ -21,6 +35,11 @@
 <body>
     <div id="map"></div>
     <div class="tooltip" id="tooltip"></div>
+
+    <div id="line-chart">
+        <svg id="linegraph" height="200" width="400"></svg>
+    </div>
+    
 
     <script>
 
@@ -71,6 +90,15 @@
 
                     const countryName = d.properties.name;
                     const stats = countryStatsMap.get(countryName);
+
+                    // prepare line graph data
+                    const countryData = combinedData.filter(d => d.Country === countryName);
+                    const disastersOverTime = d3.rollups(
+                        countryData,
+                        v => v.length,
+                        d => +d["Year"]
+                    ).sort((a, b) => a[0] - b[0]); // Sort by year
+
                     if (stats) {
                         tooltip.style("display", "block")
                             .html(`
@@ -80,9 +108,51 @@
                                 Number of Disasters: ${stats.numberOfDisasters}<br>
                                 Most Common Disaster Subgroup: ${stats.mostCommonDisasterSubgroup}
                             `);
+
+                        const linegraph = d3.select("svg#linegraph");
+                        const margin = { top: 10, right: 10, bottom: 20, left: 30 };
+                        const gwidth = +linegraph.attr("width") - margin.left - margin.right;
+                        const gheight = +linegraph.attr("height") - margin.top - margin.bottom;
+
+                        const xScale = d3.scaleLinear()
+                            .domain([1900, 2020])
+                            .range([0, gwidth]);
+
+                        const yScale = d3.scaleLinear()
+                            .domain([0, 20])
+                            .range([gheight, 0]);
+                        
+                        linegraph.append("g")
+                            .attr("transform", `translate(${margin.left},${margin.top + gheight})`)
+                            .call(d3.axisBottom(xScale).ticks(5).tickFormat(d3.format("d")));
+
+                        linegraph.append("g")
+                            .attr("transform", `translate(${margin.left},${margin.top})`)
+                            .call(d3.axisLeft(yScale));
+
+                        const lineGen = d3.line()
+                            .x(d => xScale(d[0]))
+                            .y(d => yScale(d[1]));
+                        
+                        linegraph.append("path")
+                            .datum(disastersOverTime)
+                            .attr("fill", "none")
+                            .attr("stroke", "steelblue")
+                            .attr("stroke-width", 2)
+                            .attr("d", lineGen);
+
+                        linegraph.append("text")
+                            .attr("x", margin.left + gwidth / 2)
+                            .attr("y", margin.top -10)
+                            .attr("text-anchor", "middle")
+                            .attr("font-size", "16px")
+                            .text(`Disasters Over Time: ${countryName}`);
+
                     } else {
                         tooltip.style("display", "none");
+                        d3.select("#linegraph").selectAll("*").remove();
                     }
+                    
                 })
                 .on("mousemove", function(event) {
                     tooltip.style("top", (event.pageY + 10) + "px")
@@ -90,6 +160,7 @@
                 })
                 .on("mouseout", function() {
                     tooltip.style("display", "none");
+                    d3.select("#linegraph").selectAll("*").remove(); // Clear graph on mouseout
                 });
         }).catch(error => {
             console.error("Error w csv data pros.", error);
