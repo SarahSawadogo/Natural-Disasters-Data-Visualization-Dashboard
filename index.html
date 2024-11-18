@@ -13,20 +13,7 @@
             display: none;
             pointer-events: none;
         }
-        body {
-            display: flex;
-            flex-direction: row;
-
-        }
-        #map {
-            width: 60%;
-            vertical-align: top;
-        }
-        #line-chart {
-            width: 35%;
-            padding-left: 5%;
-            vertical-align: top;
-        }   
+        
     </style>
 
 </head>
@@ -37,7 +24,7 @@
     <div class="tooltip" id="tooltip"></div>
 
     <div id="line-chart">
-        <svg id="linegraph" height="200" width="400"></svg>
+        <svg id="linegraph" height="300" width="400"></svg>
     </div>
     
 
@@ -119,7 +106,7 @@
                             .range([0, gwidth]);
 
                         const yScale = d3.scaleLinear()
-                            .domain([0, 20])
+                            .domain([0, 70])
                             .range([gheight, 0]);
                         
                         linegraph.append("g")
