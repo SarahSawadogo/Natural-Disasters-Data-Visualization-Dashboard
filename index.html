@@ -53,16 +53,32 @@
         // Function to standardize country names
         function standardizeCountryName(name) {
             const countryNameMap = {
-                "United States": "United States of America",
-                "Russia": "Russian Federation",
-                "South Korea": "Korea, Republic of",
-                "North Korea": "Korea, Democratic People's Republic of",
-                "Iran": "Iran (Islamic Republic of)",
-                "Vietnam": "Viet Nam",
-                "Syria": "Syrian Arab Republic",
+                "United States of America (the)": "United States",
+                "Russian Federation (the)": "Russia",
+                "Soviet Union": "Russia", // Map Soviet Union to Russia
+                "Korea (the Republic of)": "South Korea",
+                "Korea (the Democratic People's Republic of)": "North Korea",
+                "Côte d’Ivoire": "Ivory Coast",
+                "United Kingdom of Great Britain and Northern Ireland (the)": "United Kingdom",
+                "United Republic of Tanzania": "Tanzania",
+                "Lao People's Democratic Republic (the)": "Laos",
+                "Viet Nam": "Vietnam",
+                "Syrian Arab Republic": "Syria",
+                "Bolivia (Plurinational State of)": "Bolivia",
+                "Bahamas (the)": "The Bahamas",
+                "Gambia (the)": "Gambia",
+                "Netherlands (the)": "Netherlands",
+                "Sudan (the)": "Sudan",
+                "Congo (the)": "Republic of the Congo",
+                "Congo (the Democratic Republic of the)": "Democratic Republic of the Congo",
+                "Iran (Islamic Republic of)": "Iran",
+                "Taiwan (Province of China)": "Taiwan",
+                "Timor-Leste": "East Timor",
+                "Micronesia (Federated States of)": "Micronesia",
+                "Czech Republic (the)": "Czech Republic",
                 // Add other mappings as needed
             };
-            return countryNameMap[name] || name;
+            return countryNameMap[name] || name.trim();
         }
 
         Promise.all([
@@ -71,6 +87,12 @@
             d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson")
         ]).then(([data1, data2, geoData]) => {
             const combinedData = data1.concat(data2);
+
+            // Log standardized names for debugging
+            const standardizedGeoJSONNames = geoData.features.map(d => standardizeCountryName(d.properties.name));
+            const standardizedDatasetNames = Array.from(new Set(combinedData.map(d => standardizeCountryName(d.Country))));
+            console.log("Standardized GeoJSON names:", standardizedGeoJSONNames);
+            console.log("Standardized dataset names:", standardizedDatasetNames);
 
             // Precompute country stats for initial display
             const countryStats = d3.rollups(combinedData, v => {
@@ -89,7 +111,7 @@
 
             const countryStatsMap = new Map(countryStats);
 
-            
+            // Draw the initial neutral map with country stats in the tooltip
             svg.selectAll("path")
                 .data(geoData.features)
                 .enter().append("path")
@@ -97,7 +119,7 @@
                 .attr("fill", "#d3d3d3")  
                 .attr("stroke", "#fff")
                 .on("mouseover", function(event, d) {
-                    const countryName = d.properties.name;
+                    const countryName = standardizeCountryName(d.properties.name);
                     const stats = countryStatsMap.get(countryName);
                     
                     if (stats) {
@@ -135,11 +157,12 @@
                 // Update map colors and tooltips based on selected disaster type
                 svg.selectAll("path")
                     .attr("fill", d => {
-                        const count = disasterCountsMap.get(d.properties.name) || 0;
+                        const countryName = standardizeCountryName(d.properties.name);
+                        const count = disasterCountsMap.get(countryName) || 0;
                         return count > 0 ? colorScale(count) : "#d3d3d3"; // Default color if no data for the country
                     })
                     .on("mouseover", function(event, d) {
-                        const countryName = d.properties.name;
+                        const countryName = standardizeCountryName(d.properties.name);
                         const count = disasterCountsMap.get(countryName) || 0;
                         const stats = countryStatsMap.get(countryName);
 
