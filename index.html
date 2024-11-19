@@ -1,6 +1,9 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
         .tooltip {
@@ -30,10 +33,12 @@
             background-color: #4a7c6e;
         }
     </style>
+    <title>Disaster Map</title>
 </head>
 
 <body>
     <div id="map"></div>
+    <div id="legend"></div>
     <div class="button-container" id="button-container"></div>
     <div class="tooltip" id="tooltip"></div>
 
@@ -50,35 +55,38 @@
         const path = d3.geoPath().projection(projection);
         const tooltip = d3.select("#tooltip");
 
+        // Create the legend SVG
+        const legendWidth = 300, legendHeight = 10;
+        const legendSvg = d3.select("#legend").append("svg")
+            .attr("width", legendWidth + 50)
+            .attr("height", 50);
+
         // Function to standardize country names
         function standardizeCountryName(name) {
+            if (!name || typeof name !== "string") return "Unknown";
             const countryNameMap = {
                 "United States of America (the)": "United States",
                 "Russian Federation (the)": "Russia",
-                "Soviet Union": "Russia", // Map Soviet Union to Russia
+                "Soviet Union": "Russia",
                 "Korea (the Republic of)": "South Korea",
                 "Korea (the Democratic People's Republic of)": "North Korea",
                 "Côte d’Ivoire": "Ivory Coast",
                 "United Kingdom of Great Britain and Northern Ireland (the)": "United Kingdom",
-                "United Republic of Tanzania": "Tanzania",
-                "Lao People's Democratic Republic (the)": "Laos",
-                "Viet Nam": "Vietnam",
-                "Syrian Arab Republic": "Syria",
-                "Bolivia (Plurinational State of)": "Bolivia",
                 "Bahamas (the)": "The Bahamas",
                 "Gambia (the)": "Gambia",
                 "Netherlands (the)": "Netherlands",
                 "Sudan (the)": "Sudan",
+                "Iran (Islamic Republic of)": "Iran",
+                "Viet Nam": "Vietnam",
+                "Bolivia (Plurinational State of)": "Bolivia",
+                "Lao People's Democratic Republic (the)": "Laos",
+                "Syrian Arab Republic": "Syria",
                 "Congo (the)": "Republic of the Congo",
                 "Congo (the Democratic Republic of the)": "Democratic Republic of the Congo",
-                "Iran (Islamic Republic of)": "Iran",
-                "Taiwan (Province of China)": "Taiwan",
                 "Timor-Leste": "East Timor",
-                "Micronesia (Federated States of)": "Micronesia",
-                "Czech Republic (the)": "Czech Republic",
                 // Add other mappings as needed
             };
-            return countryNameMap[name] || name.trim();
+            return countryNameMap[name] || name;
         }
 
         Promise.all([
@@ -88,11 +96,11 @@
         ]).then(([data1, data2, geoData]) => {
             const combinedData = data1.concat(data2);
 
-            // Log standardized names for debugging
+            // Debugging logs for standardization
             const standardizedGeoJSONNames = geoData.features.map(d => standardizeCountryName(d.properties.name));
             const standardizedDatasetNames = Array.from(new Set(combinedData.map(d => standardizeCountryName(d.Country))));
-            console.log("Standardized GeoJSON names:", standardizedGeoJSONNames);
-            console.log("Standardized dataset names:", standardizedDatasetNames);
+            console.log("Standardized GeoJSON Names:", standardizedGeoJSONNames);
+            console.log("Standardized Dataset Names:", standardizedDatasetNames);
 
             // Precompute country stats for initial display
             const countryStats = d3.rollups(combinedData, v => {
@@ -107,45 +115,80 @@
                     numberOfDisasters: numberOfDisasters,
                     mostCommonDisasterSubgroup: commonDisasterSubgroup
                 };
-            }, d => standardizeCountryName(d.Country)); // Apply standardization
+            }, d => standardizeCountryName(d.Country));
 
             const countryStatsMap = new Map(countryStats);
 
-            // Draw the initial neutral map with country stats in the tooltip
+            // Add the gradient for the legend
+            const gradient = legendSvg.append("defs").append("linearGradient")
+                .attr("id", "legend-gradient")
+                .attr("x1", "0%").attr("x2", "100%")
+                .attr("y1", "0%").attr("y2", "0%");
+                
+            gradient.append("stop")
+                .attr("offset", "0%")
+                .attr("stop-color", d3.interpolateBlues(0)); // Start of gradient
+
+            gradient.append("stop")
+                .attr("offset", "100%")
+                .attr("stop-color", d3.interpolateBlues(1)); // End of gradient
+
+            // Draw the legend rectangle
+            legendSvg.append("rect")
+                .attr("x", 25)
+                .attr("y", 20)
+                .attr("width", legendWidth)
+                .attr("height", legendHeight)
+                .style("fill", "url(#legend-gradient)");
+
+            // Add labels to the legend
+            const legendScale = d3.scaleLinear()
+                .domain([0, 100]) // Adjust based on your data's range
+                .range([25, 25 + legendWidth]);
+
+            const legendAxis = d3.axisBottom(legendScale)
+                .ticks(5)
+                .tickSize(5);
+
+            legendSvg.append("g")
+                .attr("class", "legend")
+                .attr("transform", "translate(0, 30)")
+                .call(legendAxis);
+
+            // Draw the map
             svg.selectAll("path")
                 .data(geoData.features)
                 .enter().append("path")
                 .attr("d", path)
-                .attr("fill", "#d3d3d3")  
+                .attr("fill", "#d3d3d3")
                 .attr("stroke", "#fff")
                 .on("mouseover", function(event, d) {
                     const countryName = standardizeCountryName(d.properties.name);
                     const stats = countryStatsMap.get(countryName);
-                    
+
                     if (stats) {
                         tooltip.style("display", "block")
-                               .html(`
+                            .html(`
                                 <strong>${countryName}</strong><br>
                                 Average Deaths: ${stats.averageDeaths.toFixed(2)}<br>
                                 Total Economic Loss: $${stats.totalEconomicLoss.toLocaleString()}<br>
                                 Number of Disasters: ${stats.numberOfDisasters}<br>
                                 Most Common Disaster Subgroup: ${stats.mostCommonDisasterSubgroup}
-                               `);
+                            `);
                     } else {
                         tooltip.style("display", "block")
-                               .html(`<strong>${countryName}</strong><br>No data available`);
+                            .html(`<strong>${countryName}</strong><br>No data available`);
                     }
                 })
                 .on("mousemove", function(event) {
                     tooltip.style("top", (event.pageY + 10) + "px")
-                           .style("left", (event.pageX + 10) + "px");
+                        .style("left", (event.pageX + 10) + "px");
                 })
                 .on("mouseout", function() {
                     tooltip.style("display", "none");
                 });
 
             function updateMap(selectedDisasterType) {
-                // Filter data for the selected disaster type
                 const disasterData = combinedData.filter(d => d["Disaster Type"] === selectedDisasterType);
 
                 const disasterCounts = d3.rollups(disasterData, v => v.length, d => standardizeCountryName(d.Country));
@@ -154,12 +197,11 @@
                 const colorScale = d3.scaleSequential(d3.interpolateBlues)
                     .domain([0, d3.max(disasterCounts, d => d[1])]);
 
-                // Update map colors and tooltips based on selected disaster type
                 svg.selectAll("path")
                     .attr("fill", d => {
                         const countryName = standardizeCountryName(d.properties.name);
                         const count = disasterCountsMap.get(countryName) || 0;
-                        return count > 0 ? colorScale(count) : "#d3d3d3"; // Default color if no data for the country
+                        return count > 0 ? colorScale(count) : "#d3d3d3";
                     })
                     .on("mouseover", function(event, d) {
                         const countryName = standardizeCountryName(d.properties.name);
@@ -167,13 +209,13 @@
                         const stats = countryStatsMap.get(countryName);
 
                         tooltip.style("display", "block")
-                               .html(`
+                            .html(`
                                 <strong>${countryName}</strong><br>
                                 Number of ${selectedDisasterType} Disasters: ${count}<br>
                                 Average Deaths: ${stats ? stats.averageDeaths.toFixed(2) : 'N/A'}<br>
                                 Total Economic Loss: $${stats ? stats.totalEconomicLoss.toLocaleString() : 'N/A'}<br>
                                 Most Common Disaster Subgroup: ${stats ? stats.mostCommonDisasterSubgroup : 'N/A'}
-                               `);
+                            `);
                     });
             }
 
@@ -194,4 +236,5 @@
         });
     </script>
 </body>
+
 </html>
